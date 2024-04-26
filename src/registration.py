@@ -21,8 +21,6 @@ class Registration_windows(QWidget, registration_programm_interface.Ui_MainWindo
             user = db.DataBase(password, name, email)
             user.create_db()
             self.open_search_chats()
-        else:
-            self.password.setText('Пароли различаются')
     
     def open_search_chats(self):
         self.close()
