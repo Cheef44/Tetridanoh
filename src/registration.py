@@ -6,10 +6,13 @@ from PyQt6.QtWidgets import QWidget, QApplication
 import registration_programm_interface
 import db
 import search_chtas
+import socket
+import json
 
 class Registration_windows(QWidget, registration_programm_interface.Ui_MainWindow):
-    def __init__(self):
+    def __init__(self, client:socket.socket):
         super().__init__()
+        self.client = client
         self.setupUi(self)
         self.setFixedSize(500, 400)
         self.Registration.clicked.connect(
@@ -19,6 +22,8 @@ class Registration_windows(QWidget, registration_programm_interface.Ui_MainWindo
     def registration(self, name, email, password, password_2):
         if password == password_2:
             user = db.DataBase(password, name, email)
+            user_data = ['(REGISTRETION&UPDATE)', name, password, email]
+            self.client.send(json.dumps(user_data).encode('utf-8'))
             user.create_db()
             self.open_search_chats()
     
