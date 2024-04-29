@@ -1,4 +1,5 @@
 from scripts import main
 
 if __name__ == '__main__':
-    main.start_app()
+    app = main.Main()
+    app.start_app()
