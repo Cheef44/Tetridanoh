@@ -14,6 +14,7 @@ class Search_window(QWidget, search_programm_interface.Ui_MainWindow):
         self.puk = False
         self.setFixedSize(538, 463)
         self.setupUi(self)
+        self.tabWidget.setCurrentIndex(0)
         name = db.DataBase().retrieve_data()[0][0][0]
         self.nick_name.setText(name)
         if self.tabWidget.currentIndex() == 0:
@@ -21,6 +22,7 @@ class Search_window(QWidget, search_programm_interface.Ui_MainWindow):
         self.tabWidget.currentChanged.connect(self.freands_chats)
         self.tabWidget.currentChanged.connect(self.All_chats)
         self.all_list.itemClicked.connect(self.add_chat)
+        self.search_chats.textChanged.connect(self.search)
     
     def All_chats(self, index):
         if self.puk == False:
@@ -39,15 +41,15 @@ class Search_window(QWidget, search_programm_interface.Ui_MainWindow):
                 for i in server_data:
                     if i[0] != id[0][0]:
                         self.keys.append(i[0])
-                        self.items = {k:v for k,v in zip(self.keys,values)}
-                        if not i[0] in self.items.keys():
+                        self.all_items = {k:v for k,v in zip(self.keys,values)}
+                        if not i[0] in self.all_items.keys():
                             self.all_list.addItem(i[1])
             self.tabWidget.setCurrentIndex(1)
 
     def add_chat(self, item):
         index = self.all_list.row(item)
-        if self.items:
-            add_chat = QMessageBox.question(None, "Добавление пользователя", f"Хотите ли вы добавить пользователя {self.items[self.keys[index]]} с id: {self.keys[index]} в дружеские чаты?", QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        if self.all_items:
+            add_chat = QMessageBox.question(None, "Добавление пользователя", f"Хотите ли вы добавить пользователя {self.all_items[self.keys[index]]} с id: {self.keys[index]} в дружеские чаты?", QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
             if add_chat == QMessageBox.StandardButton.Yes:
                 chat_id = self.keys[index]
                 email = ''.join(db.DataBase.retrieve_data(False)[-1][0])
@@ -56,9 +58,9 @@ class Search_window(QWidget, search_programm_interface.Ui_MainWindow):
                 server_data = self.server.recv(1024)
                 server_data = json.loads(server_data)
                 if server_data == True:
-                    QMessageBox.information(None, "Добавление пользователя", f"Пользователь {self.items[self.keys[index]]} был добавлен в дружеские чаты")
+                    QMessageBox.information(None, "Добавление пользователя", f"Пользователь {self.all_items[self.keys[index]]} был добавлен в дружеские чаты")
                 else:
-                    QMessageBox.information(None, "Добавление пользователя", f"Пользователь {self.items[self.keys[index]]} уже есть у вас в друзьях")
+                    QMessageBox.information(None, "Добавление пользователя", f"Пользователь {self.all_items[self.keys[index]]} уже есть у вас в друзьях")
     
     def freands_chats(self, index):
         if index == 0:
@@ -73,6 +75,22 @@ class Search_window(QWidget, search_programm_interface.Ui_MainWindow):
                 if server_data:
                     for i in server_data:
                         keys.append(i[1])
-                        items = {k:v for k,v in zip(keys,values)}
-                        if not i[1] in items.keys():
-                            self.freand_list.addItem(i[0])          
+                        self.freand_items = {k:v for k,v in zip(keys,values)}
+                        if not i[1] in self.freand_items.keys():
+                            self.freand_list.addItem(i[0])
+                else:
+                    self.freand_list.clear()
+    
+    def search(self, text):
+        if self.tabWidget.currentIndex() == 1:
+            all_chats = [i[1] for i in self.all_items.items()]
+            self.all_list.clear()
+            for chat in all_chats:
+                if text in chat:
+                    self.all_list.addItem(chat)
+        if self.tabWidget.currentIndex() == 0:
+            freand_chats = [i[1] for i in self.freand_items.items()]
+            self.freand_list.clear()
+            for freand_chat in freand_chats:
+                if text in freand_chat:
+                    self.freand_list.addItem(freand_chat)
