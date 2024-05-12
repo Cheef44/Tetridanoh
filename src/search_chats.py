@@ -1,3 +1,7 @@
+import sys
+import os
+sys.path.append(os.path.abspath('../src'))
+
 from PyQt6.QtWidgets import QWidget, QMessageBox
 import search_programm_interface
 from PyQt6 import QtWidgets
@@ -6,6 +10,7 @@ import socket
 import json
 import time
 from plyer import notification
+import src.messages as messages
 
 class Search_window(QWidget, search_programm_interface.Ui_MainWindow):
     def __init__(self, server:socket.socket):
@@ -23,6 +28,7 @@ class Search_window(QWidget, search_programm_interface.Ui_MainWindow):
         self.tabWidget.currentChanged.connect(self.All_chats)
         self.all_list.itemClicked.connect(self.add_chat)
         self.search_chats.textChanged.connect(self.search)
+        self.freand_list.itemClicked.connect(self.open_message)
     
     def All_chats(self, index):
         if self.puk == False:
@@ -68,14 +74,14 @@ class Search_window(QWidget, search_programm_interface.Ui_MainWindow):
             user_data = ['(ALLFREANDS)', email]
             self.server.sendall(json.dumps(user_data).encode('utf-8'))
             values = [self.freand_list.item(item_index).text() for item_index in range(self.freand_list.count())]
-            keys = []
+            self.freand_keys = []
             if user_data:
                 server_data = self.server.recv(1024)
                 server_data = json.loads(server_data)
                 if server_data:
                     for i in server_data:
-                        keys.append(i[1])
-                        self.freand_items = {k:v for k,v in zip(keys,values)}
+                        self.freand_keys.append(i[1])
+                        self.freand_items = {k:v for k,v in zip(self.freand_keys,values)}
                         if not i[1] in self.freand_items.keys():
                             self.freand_list.addItem(i[0])
                 else:
@@ -94,3 +100,11 @@ class Search_window(QWidget, search_programm_interface.Ui_MainWindow):
             for freand_chat in freand_chats:
                 if text in freand_chat:
                     self.freand_list.addItem(freand_chat)
+    
+    def open_message(self, item):
+        self.tabWidget.setCurrentIndex(1)
+        self.tabWidget.setCurrentIndex(0)
+        index = self.freand_list.row(item)
+        nick_name = self.freand_items[self.freand_keys[index]]
+        self.window = messages.Message_windows(self.server, nick_name)
+        self.window.show()
