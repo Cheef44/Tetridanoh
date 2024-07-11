@@ -2,15 +2,17 @@ import sys
 import os
 sys.path.append(os.path.abspath('src'))
 
-from src import registration, search_chtas, db
+from src import registration, db, messages
 from src import db
 from PyQt6.QtWidgets import QApplication
 import socket
 import json
+from threading import Thread
 
-class Main():
+
+class Main:
     def __init__(self) -> None:
-        pass
+        self.message_text = ''
         
     def update(self, client:socket.socket):
         name,password,email = db.DataBase.retrieve_data(False)
@@ -28,6 +30,6 @@ class Main():
             windows.show()
         else:
             self.update(self.client)
-            window = search_chtas.Search_window(self.client)
+            window = messages.Message_windows(self.client)
             window.show()
         sys.exit(app.exec())
