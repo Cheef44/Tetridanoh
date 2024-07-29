@@ -5,7 +5,7 @@ sys.path.append(os.path.abspath('../src'))
 from PyQt6.QtWidgets import QWidget, QApplication
 import registration_programm_interface
 import db
-import src.search_chats as search_chats
+import src.messages as messages
 import socket
 import json
 
@@ -29,5 +29,5 @@ class Registration_windows(QWidget, registration_programm_interface.Ui_MainWindo
     
     def open_search_chats(self):
         self.close()
-        self.window = search_chats.Search_window()
+        self.window = messages.Message_windows(self.client)
         self.window.show()
