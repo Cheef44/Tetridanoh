@@ -12,26 +12,50 @@ import db
 import socket
 import json
 import logging
+import time
+import struct
+import hashlib
 logging.basicConfig(level=logging.DEBUG)
 
 #Класс приема сообщений
 class GetMessage(QThread):
-    data_received = pyqtSignal(list)
+    history_messages = pyqtSignal(list)
+    message = pyqtSignal(list)
 
-    def __init__(self, server):
+    def __init__(self, server, email, chat_id):
         super().__init__()
         self.server = server
+        self.email = email
+        self.chat_id = chat_id
         self._running = True
-        
+        self.data = []
+    
+    def compute_checksum(self, data):
+        return hashlib.md5(data).hexdigest()
+      
     def run(self):
         try:
+            self.server.send(json.dumps(['(GETMESSAGE)', self.chat_id, self.email]).encode('utf-8'))
             while self._running:
-                server_data = self.server.recv(1024)
-                server_data = json.loads(server_data)
-                if server_data[0] == '(MESSAGE)':
-                    message_text = server_data[1]
-                    self.data_received.emit(message_text)
+                data_length = self.server.recv(4)
+                data_length = struct.unpack('!I', data_length)[0]
+                server_data = self.server.recv(data_length)
+                check_sum = server_data[server_data.index(b'|')+1:].decode()
+                server_data = server_data[:server_data.index(b'|')]
+                
+                if check_sum == self.compute_checksum(server_data):
+                    server_data = json.loads(server_data)
+                    if server_data[0] == '(GETMESSAGE)':
+                        if server_data[0] != self.data:
+                            self.history_messages.emit(server_data[1])
+                            self.data = server_data[1]
+                    if server_data[0] == '(MESSAGE)':
+                        self.message.emit(server_data[1])
+                else:
+                    self.server.send(json.dumps(['(GETMESSAGE)', self.chat_id, self.email]).encode('utf-8'))
+                
         except Exception as e:
+            logging.debug(f'ERROR:{server_data}')
             logging.error(f"Ошибка в процессе worker: {e}")
     def stop(self):
         self._running = False
@@ -49,10 +73,8 @@ class ChatMenager(QThread):
         self.server.send((json.dumps(["(ALLCHATS)", db.DataBase().retrieve_data()[-1][0][0]]).encode('utf-8')))
         server_data = self.server.recv(1024)
         server_data = json.loads(server_data)
-        #logging.debug(f'server_data_a: {server_data}')
         if server_data[0] == "(ALLCHATS)":
             id = server_data[1][-1][0]
-            #logging.debug(f'id_user:{id}')
             self.data.emit([server_data[1:][0], id])
         elif server_data[0] == '(ALLFREANDS)':
             self.load_freands_chats()
@@ -63,7 +85,6 @@ class ChatMenager(QThread):
         self.server.sendall(json.dumps(user_data).encode('utf-8'))
         server_data = self.server.recv(1024)
         server_data = json.loads(server_data)
-        #logging.debug(f'server_data_f: {server_data}')
         if server_data[0] == '(ALLFREANDS)':
             self.data.emit(server_data[1:][0])
         elif server_data[0] == "(ALLCHATS)":
@@ -93,10 +114,32 @@ class AddChat(QThread):
         self.server.sendall(json.dumps(user_data).encode('utf-8'))
         server_data = self.server.recv(1024)
         server_data = json.loads(server_data)
-        #logging.debug(f'server_data_add: {server_data}')
         if server_data[0] == '(ADDCHAT)':
             self.data.emit(server_data[1])
-            
+
+#Класс запроса на получение истории чатов
+class RequestRetrieveChatHistory(QThread):
+    data = pyqtSignal(list)
+    
+    def __init__(self, server:socket.socket, email, chat_id):
+        super().__init__()
+        self.server = server
+        self.email = email
+        self.chat_id = chat_id
+        self._running = True
+        self.message = []
+        self.iterg = 0
+    
+    def run(self):
+       self.server.send(json.dumps(['(GETMESSAGE)', self.chat_id, self.email]).encode('utf-8'))
+       data_length = self.server.recv(4)
+       data_length = struct.unpack('!I', data_length)[0]
+       server_data = self.server.recv(data_length)
+       self.data.emit(json.loads(server_data))
+    
+    def stop(self):
+        self._running = False
+        
 #Основной класс окна
 class Message_windows(QWidget, messages_programm_interface.Ui_MainWindow):
     def __init__(self, server: socket.socket):
@@ -109,18 +152,16 @@ class Message_windows(QWidget, messages_programm_interface.Ui_MainWindow):
         self.chat_id = 1
         self.open_mess = False
         self.setupUi(self)
-        self.get_message = GetMessage(self.server)
+        
         self.tabWidget.setCurrentIndex(0)
         self.nickname.setText('')
         self.text_messages.installEventFilter(self)
         self.tabWidget.currentChanged.connect(self.tab_changed)
         self.all_list.itemClicked.connect(self.get_chat_data)
-        self.search_chats.textChanged.connect(self.search)
         self.freand_list.itemClicked.connect(self.open_message)
         self.tab_changed(self.tabWidget.currentIndex())
           
     def tab_changed(self, index):
-        #logging.debug(f'tab_index: {index}')
         self.chat_menager = ChatMenager(self.server, index)
         if index == 0:
             if self.open_mess == False:
@@ -132,7 +173,6 @@ class Message_windows(QWidget, messages_programm_interface.Ui_MainWindow):
         
     @pyqtSlot(list)
     def update_all_chats(self, data):
-        #logging.debug(f'all_chats: {data}')
         self.keys = []
         self.all_list.clear()
         for item in data[0]:
@@ -153,6 +193,7 @@ class Message_windows(QWidget, messages_programm_interface.Ui_MainWindow):
                     self.add_chat = AddChat(self.server, email, chat_id)
                     self.add_chat.data.connect(self.check_add_chat)
         self.add_chat.start()
+        
     @pyqtSlot(bool)
     def check_add_chat(self, check_add):
         logging.debug(f'check_add: {check_add}')
@@ -163,7 +204,6 @@ class Message_windows(QWidget, messages_programm_interface.Ui_MainWindow):
     
     @pyqtSlot(list)
     def update_freands_chtas(self, data):
-        #logging.debug(f'freand_chats: {data}')
         self.freand_keys = []
         self.freand_list.clear()
         for item in data:
@@ -174,21 +214,42 @@ class Message_windows(QWidget, messages_programm_interface.Ui_MainWindow):
                  
     def open_message(self, item):
         self.chat_menager.wait(1)
+        self.messages.clear()
         self.open_mess = True
         index = self.freand_list.row(item)
         self.nickname.setText(self.freand_items[self.freand_keys[index]])
         self.chat_id = self.freand_keys[index]
-        self.get_message.data_received.connect(self.handle_data_received)
+        self.chat_history = RequestRetrieveChatHistory(self.server, self.email, self.chat_id)
+        self.chat_history.data.connect(self.process_received_chat_history)
+        self.get_message = GetMessage(self.server, self.email, self.chat_id)
+        self.get_message.history_messages.connect(self.process_received_chat_history)
+        self.get_message.message.connect(self.process_messages_received_from_user)
         self.get_message.start()
         
     @pyqtSlot(list)    
-    def handle_data_received(self, data):
+    def process_messages_received_from_user(self, data):
         item = QListWidgetItem(data[0])
-        if data[1] == 2:
-            item.setTextAlignment(Qt.AlignmentFlag.AlignLeft)
-        else:
-            item.setTextAlignment(Qt.AlignmentFlag.AlignRight)
-        self.messages.addItem(item)
+        try:
+            if data[1] == self.email:
+                item.setTextAlignment(Qt.AlignmentFlag.AlignRight)
+            else:
+                item.setTextAlignment(Qt.AlignmentFlag.AlignLeft)
+            self.messages.addItem(item)
+        except:
+            pass
+    
+    @pyqtSlot(list)
+    def process_received_chat_history(self, data):
+        try:
+            for item in data:
+                items = QListWidgetItem(item[0])
+                if item[1] == self.email:
+                    items.setTextAlignment(Qt.AlignmentFlag.AlignRight)
+                else:
+                    items.setTextAlignment(Qt.AlignmentFlag.AlignLeft)
+                self.messages.addItem(items)
+        except:
+            pass
 
     def eventFilter(self, obj, event):
         if obj is self.text_messages and event.type() == QtCore.QEvent.Type.KeyPress:
@@ -209,20 +270,20 @@ class Message_windows(QWidget, messages_programm_interface.Ui_MainWindow):
            self.open_mess = False
            self.messages.clear()
            self.get_message.stop()
-           self.get_message.wait(1)
+           self.get_message.wait(4)
+           self.chat_history.wait(4)
     
     def send_message(self, text):
         item = QListWidgetItem(f'{text}\n{datetime.datetime.today().time().hour}:{datetime.datetime.today().time().minute} {datetime.datetime.today().date()}')
         item.setTextAlignment(Qt.AlignmentFlag.AlignRight)
-        history_messages = [item.text(), Qt.AlignmentFlag.AlignRight]
+        history_messages = [item.text(), self.email]
         self.server.send(json.dumps(['(HISTORYMESSAGE)', self.chat_id, self.email, history_messages]).encode('utf-8'))
         self.messages.addItem(item)
         self.text_messages.clear()
     
     def closeEvent(self, event: QCloseEvent):
         self.get_message.stop()
-        self.get_message.wait(1)
-        self.chat_menager.wait(1)
-        #logging.debug('Закрытие окна')
-        #logging.debug("Поток завершен.")
+        self.get_message.wait(4)
+        self.chat_menager.wait(4)
+        self.chat_history.wait(4)
         event.accept()
